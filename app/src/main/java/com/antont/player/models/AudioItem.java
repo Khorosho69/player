@@ -9,8 +9,8 @@ public class AudioItem {
 
     public AudioItem(String path, String name, String albumName) {
         this.mPath = path;
-        mName = name;
-        mAlbumName = albumName;
+        this.mName = name;
+        this.mAlbumName = albumName;
     }
 
     public String getName() {

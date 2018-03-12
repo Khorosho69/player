@@ -1,3 +1,10 @@
 <resources>
-    <string name="app_name">Player</string>
+    <string name="app_name">Music Player</string>
+    <string name="permission_denied_message">Permission is denied, allows it to do load songs.</string>
+    <string name="notification_title_previous">Previous</string>
+    <string name="notification_title_pause">Pause</string>
+    <string name="notification_title_next">Next</string>
+    <string name="previous_button_description">Skip to previous track button</string>
+    <string name="stop_button_description">Stop or resume button</string>
+    <string name="next_track_button_description">Skip to the next track button</string>
 </resources>

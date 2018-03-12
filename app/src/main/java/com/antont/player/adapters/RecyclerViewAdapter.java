@@ -9,20 +9,22 @@ import android.widget.TextView;
 import com.antont.player.R;
 import com.antont.player.models.AudioItem;
 
-import org.greenrobot.eventbus.EventBus;
-
 import java.util.List;
 
 public class RecyclerViewAdapter extends RecyclerView.Adapter<RecyclerViewAdapter.ViewHolder> {
 
     private List<AudioItem> mAudioItems;
-    private int mPreviousItem = -1;
+    private int mPreviousItemPosition;
 
-    public RecyclerViewAdapter(List<AudioItem> audioItems) {
+    private Boolean isPlaying = false;
+
+    private OnItemSelectedCallback mListener;
+
+    public RecyclerViewAdapter(List<AudioItem> audioItems, int itemPosition, OnItemSelectedCallback listener) {
         this.mAudioItems = audioItems;
+        this.mPreviousItemPosition = itemPosition;
+        this.mListener = listener;
     }
-
-
 
     @Override
     public RecyclerViewAdapter.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
@@ -38,27 +40,36 @@ public class RecyclerViewAdapter extends RecyclerView.Adapter<RecyclerViewAdapte
         holder.mNameTextView.setText(item.getName());
         holder.mAlbumTextView.setText(item.getAlbumName());
 
-        if (position == mPreviousItem) {
-            holder.mIsPlayView.setVisibility(View.VISIBLE);
+        if (position != mPreviousItemPosition) {
+            holder.mIsPlayView.setBackground(null);
         } else {
-            holder.mIsPlayView.setVisibility(View.INVISIBLE);
+            if (isPlaying) {
+                holder.mIsPlayView.setBackground(holder.itemView.getResources().getDrawable(android.R.drawable.ic_media_pause));
+            } else {
+                holder.mIsPlayView.setBackground(holder.itemView.getResources().getDrawable(android.R.drawable.ic_media_play));
+            }
         }
 
-        holder.itemView.setOnClickListener((View v) -> onItemSelected(holder, position));
+        holder.itemView.setOnClickListener((View v) -> mListener.onItemSelected(mAudioItems.get(position)));
     }
 
-    private void onItemSelected(ViewHolder holder, int position) {
-        holder.mIsPlayView.setVisibility(View.VISIBLE);
-        notifyItemChanged(mPreviousItem);
-        mPreviousItem = position;
-
-        EventBus.getDefault().post(mAudioItems.get(position));
+    public void changeCurrentSong(int newTrackIndex) {
+        isPlaying = true;
+        if (mPreviousItemPosition != newTrackIndex) {
+            notifyItemChanged(mPreviousItemPosition);
+        }
+        mPreviousItemPosition = newTrackIndex;
+        notifyItemChanged(mPreviousItemPosition);
     }
-
 
     @Override
     public int getItemCount() {
         return mAudioItems.size();
+    }
+
+    public void updatePlayingStatus(Boolean playing) {
+        isPlaying = playing;
+        notifyItemChanged(mPreviousItemPosition);
     }
 
     class ViewHolder extends RecyclerView.ViewHolder {
@@ -74,5 +85,9 @@ public class RecyclerViewAdapter extends RecyclerView.Adapter<RecyclerViewAdapte
             mAlbumTextView = v.findViewById(R.id.item_album);
             mIsPlayView = v.findViewById(R.id.is_play_image);
         }
+    }
+
+    public interface OnItemSelectedCallback {
+        void onItemSelected(AudioItem audioItem);
     }
 }
