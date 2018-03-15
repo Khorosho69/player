@@ -32,21 +32,21 @@ public class AudioItemsContainer {
         mAudioItems = audioItems;
     }
 
-    public void getNextSong() {
+    public void skipToNextSong() {
         if (mCurrentSong == null) {
             mCurrentSong = mAudioItems.get(0);
             return;
         }
-        if (mAudioItems.indexOf(mCurrentSong) != mAudioItems.size() - 1) {
-            mCurrentSong = mAudioItems.get(mAudioItems.indexOf(mCurrentSong) + 1);
-        } else {
+        if (mAudioItems.indexOf(mCurrentSong) == mAudioItems.size() - 1) {
             mCurrentSong = mAudioItems.get(0);
+        } else {
+            mCurrentSong = mAudioItems.get(mAudioItems.indexOf(mCurrentSong) + 1);
         }
     }
 
-    public void getPreviousSong() {
+    public void skipToPreviousSong() {
         if (mCurrentSong == null) {
-            mCurrentSong =  mAudioItems.get(0);
+            mCurrentSong = mAudioItems.get(0);
             return;
         }
         if (mAudioItems.indexOf(mCurrentSong) == 0) {

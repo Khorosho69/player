@@ -7,4 +7,6 @@
     <string name="previous_button_description">Skip to previous track button</string>
     <string name="stop_button_description">Stop or resume button</string>
     <string name="next_track_button_description">Skip to the next track button</string>
+    <string name="no_audio_tracks_message">No audio tracks on your device(</string>
+    <string name="notification_chanel_title">Audio player notification</string>
 </resources>

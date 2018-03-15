@@ -1,13 +1,10 @@
 package com.antont.player.activities;
 
-import android.content.ComponentName;
 import android.content.Intent;
-import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.IBinder;
 import android.provider.MediaStore;
 import android.support.annotation.NonNull;
 import android.support.design.widget.Snackbar;
@@ -20,10 +17,14 @@ import android.view.View;
 import android.widget.ImageButton;
 import android.widget.SeekBar;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.antont.player.AudioItemsContainer;
+import com.antont.player.events.OnServiceDestroyEvent;
+import com.antont.player.events.OnTrackStartedEvent;
 import com.antont.player.R;
 import com.antont.player.adapters.RecyclerViewAdapter;
+import com.antont.player.enums.ActionType;
 import com.antont.player.models.AudioItem;
 import com.antont.player.services.AudioPlayerService;
 
@@ -39,24 +40,30 @@ import java.util.TimerTask;
 public class MainActivity extends AppCompatActivity implements ActivityCompat.OnRequestPermissionsResultCallback,
         RecyclerViewAdapter.OnItemSelectedCallback {
 
+    private static String ARG_TRACK_DURATION = "ARG_TRACK_DURATION";
+    private static String ARG_SEEK_BAR_POSITION = "ARG_SEEK_BAR_POSITION";
+    private static String ARG_TRACK_NAME = "ARG_TRACK_NAME";
+    private static String ARG_IS_PLAYING = "ARG_IS_PLAYING";
+
     private static final int PERMISSION_REQUEST_CODE = 1024;
+    private static final int TIMER_PERIOD_IN_MS = 50; // Amount of milliseconds in which the progressBar is updated
+
     private RecyclerView mRecyclerView;
-
-    private boolean isServiceBound = false;
-    private AudioPlayerService mPlayerService;
-    private ServiceConnection mServiceConnection;
-    private Intent mServiceIntent;
-
     private TextView mTrackNameTextView;
-    private ImageButton mImageButton;
+    private ImageButton mPlayPauseButton;
+
     private SeekBar mSeekBar;
+    private Timer mTimer = new Timer();
+
+    private int mTrackDuration = 0;
+    private Boolean isPlaying = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        mImageButton = findViewById(R.id.play_pause_button);
+        mPlayPauseButton = findViewById(R.id.play_pause_button);
         mTrackNameTextView = findViewById(R.id.track_name_text_view);
 
         setupSeekBar();
@@ -68,28 +75,28 @@ public class MainActivity extends AppCompatActivity implements ActivityCompat.On
         } else {
             setupRecyclerView();
         }
+
+        restoreStateFromSavedInstance(savedInstanceState);
+
         setupService();
     }
 
-    @Override
-    protected void onStart() {
-        super.onStart();
-        bindService(mServiceIntent, mServiceConnection, 0);
+    private void restoreStateFromSavedInstance(Bundle savedInstanceState) {
+        if (savedInstanceState != null) {
+            mTrackDuration = savedInstanceState.getInt(ARG_TRACK_DURATION);
+            int restoredProgress = savedInstanceState.getInt(ARG_SEEK_BAR_POSITION);
+
+            mSeekBar.setMax(mTrackDuration);
+            mSeekBar.setProgress(restoredProgress);
+            isPlaying = savedInstanceState.getBoolean(ARG_IS_PLAYING);
+            mTrackNameTextView.setText(savedInstanceState.getString(ARG_TRACK_NAME));
+            onChangeMusicState(isPlaying);
+        }
     }
 
     private void setupService() {
-        mServiceIntent = new Intent(this, AudioPlayerService.class);
-        mServiceConnection = new ServiceConnection() {
-            public void onServiceConnected(ComponentName name, IBinder binder) {
-                mPlayerService = ((AudioPlayerService.ServiceBinder) binder).getService();
-                isServiceBound = true;
-            }
-
-            public void onServiceDisconnected(ComponentName name) {
-                isServiceBound = false;
-            }
-        };
-        startService(mServiceIntent);
+        Intent serviceIntent = new Intent(this, AudioPlayerService.class);
+        startService(serviceIntent);
     }
 
     private void setupSeekBar() {
@@ -108,71 +115,108 @@ public class MainActivity extends AppCompatActivity implements ActivityCompat.On
 
             @Override
             public void onStopTrackingTouch(SeekBar seekBar) {
-                mPlayerService.setTrackProgress(seekBar.getProgress());
+                if (!AudioItemsContainer.getInstance().getAudioItems().isEmpty()) {
+                    EventBus.getDefault().post(seekBar.getProgress());
+                }
             }
         });
     }
 
-    private void setupSeekBarUpdater() {
-        mSeekBar.setMax(mPlayerService.getCurrentTrackDuration());
-        Timer timer = new Timer();
+    private void setupSeekBarUpdater(int trackDuration) {
+        mSeekBar.setMax(trackDuration);
+        mTimer = new Timer();
         MyTimerTask updateSeekBar = new MyTimerTask();
-        timer.schedule(updateSeekBar, 0, 50);
-    }
-
-    // Called from AudioPlayerService when the song starts playing or stops
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    public void onTrackPause(Boolean playing) {
-        if (playing) {
-            mImageButton.setImageDrawable(getResources().getDrawable(android.R.drawable.ic_media_pause));
-        } else {
-            mImageButton.setImageDrawable(getResources().getDrawable(android.R.drawable.ic_media_play));
-        }
-        ((RecyclerViewAdapter) mRecyclerView.getAdapter()).updatePlayingStatus(playing);
-    }
-
-    // Called from AudioPlayerService when the next song starts
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    public void onSongPlaying(Integer songIndex) {
-        setupSeekBarUpdater();
-        ((RecyclerViewAdapter) mRecyclerView.getAdapter()).changeCurrentSong(songIndex);
-        mTrackNameTextView.setText(AudioItemsContainer.getInstance().getCurrentSong().getName());
-        mImageButton.setImageDrawable(getResources().getDrawable(android.R.drawable.ic_media_pause));
+        mTimer.schedule(updateSeekBar, 0, TIMER_PERIOD_IN_MS);
     }
 
     public void setupRecyclerView() {
         mRecyclerView = findViewById(R.id.audio_recycler_view);
         mRecyclerView.setLayoutManager(new LinearLayoutManager(this));
         int songIndex = AudioItemsContainer.getInstance().getCurrentSongIndex();
-        RecyclerView.Adapter adapter = new RecyclerViewAdapter(AudioItemsContainer.getInstance().getAudioItems(),
-                songIndex, this);
+        List<AudioItem> items = AudioItemsContainer.getInstance().getAudioItems();
+        RecyclerView.Adapter adapter = new RecyclerViewAdapter(items, songIndex, this);
         mRecyclerView.setAdapter(adapter);
     }
 
-    public void onStop_StartPlaying(View view) {
-        mPlayerService.play_pauseTrack();
-        mTrackNameTextView.setText(AudioItemsContainer.getInstance().getCurrentSong().getName());
+    // Called from AudioPlayerService when the song starts playing or stops
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public void onChangeMusicState(Boolean playing) {
+        isPlaying = playing;
+        int imageId = playing ? R.drawable.ic_play : R.drawable.ic_pause;
+        mPlayPauseButton.setImageResource(imageId);
+        if (isPlaying) {
+            setupSeekBarUpdater(mTrackDuration);
+        } else {
+            cancelTimer();
+        }
+        ((RecyclerViewAdapter) mRecyclerView.getAdapter()).updatePlayingStatus(playing);
     }
 
-    public void onPlayPreviousTrack(View view) {
-        mPlayerService.playPreviousTrack();
-        mTrackNameTextView.setText(AudioItemsContainer.getInstance().getCurrentSong().getName());
+    private void cancelTimer() {
+        if (mTimer != null) {
+            mTimer.cancel();
+        }
     }
 
-    public void onPlayNextTrack(View view) {
-        mPlayerService.playNextTrack();
+    // Called from AudioPlayerService when the next song starts play
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public void onStartPlayingSong(OnTrackStartedEvent actionBody) {
+        mTimer.cancel();
+
+        mTrackDuration = actionBody.getTrackDuration();
+        mSeekBar.setProgress(0);
+        setupSeekBarUpdater(mTrackDuration);
+
+        ((RecyclerViewAdapter) mRecyclerView.getAdapter()).changeCurrentSong(actionBody.getTrackIndex());
         mTrackNameTextView.setText(AudioItemsContainer.getInstance().getCurrentSong().getName());
+        mPlayPauseButton.setImageDrawable(getResources().getDrawable(android.R.drawable.ic_media_pause));
     }
 
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public void onServiceDestroy(OnServiceDestroyEvent eventBody) {
+        setupService();
+        mTimer.cancel();
+        mTrackNameTextView.setText("");
+        ((RecyclerViewAdapter) mRecyclerView.getAdapter()).changeCurrentSong(-1);
+        AudioItemsContainer.getInstance().setCurrentSong(null);
+        mSeekBar.setProgress(0);
+    }
+
+    // Send an event that contains the type of click on the AudioPlayerService
+    public void onMediaButtonPressed(View view) {
+        if (!AudioItemsContainer.getInstance().getAudioItems().isEmpty()) {
+            switch (view.getId()) {
+                case R.id.play_pause_button:
+                    EventBus.getDefault().post(ActionType.ACTION_PLAY);
+                    break;
+                case R.id.previous_button:
+                    EventBus.getDefault().post(ActionType.ACTION_PREVIOUS);
+                    break;
+                case R.id.next_button:
+                    EventBus.getDefault().post(ActionType.ACTION_NEXT);
+                    break;
+            }
+//            mTrackNameTextView.setText(AudioItemsContainer.getInstance().getCurrentSong().getName());
+        } else {
+            Toast.makeText(this, R.string.no_audio_tracks_message, Toast.LENGTH_SHORT).show();
+        }
+    }
 
     private void checkAndroidPermission() {
-        if (Build.VERSION.SDK_INT >= 23) {
-            if (isPermissionGranted()) {
-                AudioItemsContainer.getInstance().setAudioItems(getAudioItemList());
-                setupRecyclerView();
-            } else {
-                ActivityCompat.requestPermissions(this, new String[]{android.Manifest.permission.READ_EXTERNAL_STORAGE}, PERMISSION_REQUEST_CODE);
-            }
+//        if (Build.VERSION.SDK_INT >= 23) {
+//            if (isPermissionGranted()) {
+//                AudioItemsContainer.getInstance().setAudioItems(getAudioItemList());
+//                setupRecyclerView();
+//            } else {
+//                ActivityCompat.requestPermissions(this, new String[]{android.Manifest.permission.READ_EXTERNAL_STORAGE}, PERMISSION_REQUEST_CODE);
+//            }
+//        } else {
+//            AudioItemsContainer.getInstance().setAudioItems(getAudioItemList());
+//            setupRecyclerView();
+//        }
+
+        if (Build.VERSION.SDK_INT >= 23 && !isPermissionGranted()) {
+            ActivityCompat.requestPermissions(this, new String[]{android.Manifest.permission.READ_EXTERNAL_STORAGE}, PERMISSION_REQUEST_CODE);
         } else {
             AudioItemsContainer.getInstance().setAudioItems(getAudioItemList());
             setupRecyclerView();
@@ -227,6 +271,7 @@ public class MainActivity extends AppCompatActivity implements ActivityCompat.On
             return;
         }
         if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            AudioItemsContainer.getInstance().setAudioItems(getAudioItemList());
             setupRecyclerView();
         } else if (grantResults[0] == PackageManager.PERMISSION_DENIED) {
             showSnackBar();
@@ -235,27 +280,30 @@ public class MainActivity extends AppCompatActivity implements ActivityCompat.On
 
     @Override
     public void onItemSelected(AudioItem audioItem) {
-        mPlayerService.onItemSelected(audioItem);
-        mTrackNameTextView.setText(AudioItemsContainer.getInstance().getCurrentSong().getName());
+        EventBus.getDefault().post(audioItem);
+//        mTrackNameTextView.setText(AudioItemsContainer.getInstance().getCurrentSong().getName());
     }
 
     @Override
-    protected void onStop() {
-        super.onStop();
-        isServiceBound = false;
-        unbindService(mServiceConnection);
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putInt(ARG_TRACK_DURATION, mTrackDuration);
+        outState.putInt(ARG_SEEK_BAR_POSITION, mSeekBar.getProgress());
+        outState.putString(ARG_TRACK_NAME, mTrackNameTextView.getText().toString());
+        outState.putBoolean(ARG_IS_PLAYING, isPlaying);
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
         EventBus.getDefault().unregister(this);
+        cancelTimer();
     }
 
     class MyTimerTask extends TimerTask {
         @Override
         public void run() {
-            runOnUiThread(() -> mSeekBar.setProgress(mPlayerService.getCurrentPosition()));
+            runOnUiThread(() -> mSeekBar.setProgress(mSeekBar.getProgress() + TIMER_PERIOD_IN_MS));
         }
     }
 }

@@ -14,7 +14,7 @@ import java.util.List;
 public class RecyclerViewAdapter extends RecyclerView.Adapter<RecyclerViewAdapter.ViewHolder> {
 
     private List<AudioItem> mAudioItems;
-    private int mPreviousItemPosition;
+    private int mCurrentItemPosition;
 
     private Boolean isPlaying = false;
 
@@ -22,7 +22,7 @@ public class RecyclerViewAdapter extends RecyclerView.Adapter<RecyclerViewAdapte
 
     public RecyclerViewAdapter(List<AudioItem> audioItems, int itemPosition, OnItemSelectedCallback listener) {
         this.mAudioItems = audioItems;
-        this.mPreviousItemPosition = itemPosition;
+        this.mCurrentItemPosition = itemPosition;
         this.mListener = listener;
     }
 
@@ -36,11 +36,11 @@ public class RecyclerViewAdapter extends RecyclerView.Adapter<RecyclerViewAdapte
     public void onBindViewHolder(ViewHolder holder, int position) {
         AudioItem item = mAudioItems.get(position);
 
-        holder.mNumTextView.setText(String.valueOf(position + 1));
+        holder.mPositionTextView.setText(String.valueOf(position + 1));
         holder.mNameTextView.setText(item.getName());
         holder.mAlbumTextView.setText(item.getAlbumName());
 
-        if (position != mPreviousItemPosition) {
+        if (position != mCurrentItemPosition) {
             holder.mIsPlayView.setBackground(null);
         } else {
             if (isPlaying) {
@@ -50,16 +50,19 @@ public class RecyclerViewAdapter extends RecyclerView.Adapter<RecyclerViewAdapte
             }
         }
 
-        holder.itemView.setOnClickListener((View v) -> mListener.onItemSelected(mAudioItems.get(position)));
+        holder.itemView.setOnClickListener((View v) -> {
+            changeCurrentSong(position);
+            mListener.onItemSelected(mAudioItems.get(position));
+        });
     }
 
     public void changeCurrentSong(int newTrackIndex) {
         isPlaying = true;
-        if (mPreviousItemPosition != newTrackIndex) {
-            notifyItemChanged(mPreviousItemPosition);
+        if (mCurrentItemPosition != newTrackIndex) {
+            notifyItemChanged(mCurrentItemPosition);
         }
-        mPreviousItemPosition = newTrackIndex;
-        notifyItemChanged(mPreviousItemPosition);
+        mCurrentItemPosition = newTrackIndex;
+        notifyItemChanged(newTrackIndex);
     }
 
     @Override
@@ -69,18 +72,18 @@ public class RecyclerViewAdapter extends RecyclerView.Adapter<RecyclerViewAdapte
 
     public void updatePlayingStatus(Boolean playing) {
         isPlaying = playing;
-        notifyItemChanged(mPreviousItemPosition);
+        notifyItemChanged(mCurrentItemPosition);
     }
 
     class ViewHolder extends RecyclerView.ViewHolder {
-        TextView mNumTextView;
+        TextView mPositionTextView;
         TextView mNameTextView;
         TextView mAlbumTextView;
         View mIsPlayView;
 
         ViewHolder(View v) {
             super(v);
-            mNumTextView = v.findViewById(R.id.item_id);
+            mPositionTextView = v.findViewById(R.id.item_id);
             mNameTextView = v.findViewById(R.id.item_name);
             mAlbumTextView = v.findViewById(R.id.item_album);
             mIsPlayView = v.findViewById(R.id.is_play_image);
